@@ -1,0 +1,73 @@
+//@version=6
+indicator("Reversal Probability Indicator", overlay=true)
+
+// User-defined settings
+atrLength = input(14, title="ATR Length") // ATR length definition
+threshold = input(0.02, title="Reversal Probability Threshold") // Lowered for higher sensitivity
+alertLevel = input(50, title="Alert Trigger (%)") // Adjusted alert threshold
+
+// Calculate ATR for volatility-based reversals
+atrValue = ta.atr(atrLength)
+priceChange = math.abs(close - ta.sma(close, 3)) / close * 100
+
+// Compute probability based on volatility behavior
+accuracyFactor = ta.sma(priceChange * 500, 10) / 100
+probability = (priceChange * accuracyFactor * 500)  // Increased multiplier for better visibility
+probability := math.min(math.max(probability, 0), 100)  // Cap at 100%
+
+// Plot reversal probability with color indication
+groupColor = probability >= 50 ? color.red : color.blue
+plot(probability, title="Reversal Probability", color=groupColor, linewidth=2, style=plot.style_histogram)
+
+// Generate alerts when probability is high
+alertcondition(probability > alertLevel, title="Reversal Alert", message="Possible Reversal Detected!")
+
+// Background coloring when probability is high
+bgcolor(probability > 50 ? color.new(color.red, 85) : na)
+
+// Ensure labels are only created when state changes
+var string lastState = na
+currentState = probability < 20 ? "Stable" : probability < 50 ? "Watch Out" : probability < 100 ? "Change Soon" : "Reversed"
+
+if na(lastState) or currentState != lastState
+    labelColor = probability < 20 ? color.green : probability < 50 ? color.yellow : probability < 100 ? color.orange : color.red
+    label.new(bar_index, high, currentState, color=labelColor, textcolor=color.white, size=size.small)
+    lastState := currentState
+
+// Add Buy/Sell signals on "Reversed" candles
+sma14 = ta.sma(close, 14)
+buySignal = probability == 100 and close > sma14
+sellSignal = probability == 100 and close < sma14
+
+plotshape(buySignal, location=location.belowbar, color=color.green, style=shape.triangleup, size=size.large, title="Buy Signal")
+plotshape(sellSignal, location=location.abovebar, color=color.red, style=shape.triangledown, size=size.large, title="Sell Signal")
+
+// Initialize trade tracking table (remove clearing issue)
+var table tradeTable = table.new(position=position.bottom_right, columns=5, rows=3, bgcolor=color.gray, frame_width=1)
+var float entryPrice = na
+var string tradeType = na
+var float tp = na
+var float sl = na
+var float gainLoss = na
+
+// Track last trade entry, TP, SL, and P/L
+if (buySignal or sellSignal)
+    entryPrice := close
+    tp := buySignal ? entryPrice + (atrValue * 1.5) : entryPrice - (atrValue * 1.5)
+    sl := buySignal ? entryPrice - (atrValue * 1.5) : entryPrice + (atrValue * 1.5)
+    gainLoss := buySignal ? close - entryPrice : entryPrice - close
+
+    tradeType := buySignal ? "BUY" : "SELL"
+    
+    // Update table
+    table.cell(tradeTable, 0, 0, "Last Signal", text_color=color.white, bgcolor=color.blue)
+    table.cell(tradeTable, 0, 1, "Entry Price", text_color=color.white, bgcolor=color.blue)
+    table.cell(tradeTable, 0, 2, "Take Profit", text_color=color.white, bgcolor=color.blue)
+    table.cell(tradeTable, 0, 3, "Stop Loss", text_color=color.white, bgcolor=color.blue)
+    table.cell(tradeTable, 0, 4, "P/L Points", text_color=color.white, bgcolor=color.blue)
+    
+    table.cell(tradeTable, 1, 0, tradeType, text_color=color.white, bgcolor=(tradeType == "BUY" ? color.green : color.red))
+    table.cell(tradeTable, 1, 1, str.tostring(entryPrice, format.mintick), text_color=color.white)
+    table.cell(tradeTable, 1, 2, str.tostring(tp, format.mintick), text_color=color.white)
+    table.cell(tradeTable, 1, 3, str.tostring(sl, format.mintick), text_color=color.white)
+    table.cell(tradeTable, 1, 4, str.tostring(gainLoss, format.mintick), text_color=color.white)
